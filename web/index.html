@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="运行在 Jetson 上的中国象棋对弈系统">
+  <title>楚河 · 中国象棋</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <a class="brand" href="/" aria-label="中国象棋首页">
+      <span class="brand-mark">弈</span>
+      <span><strong>楚河</strong><small>中国象棋</small></span>
+    </a>
+    <nav class="tabs" aria-label="主导航" role="tablist">
+      <button id="board-tab" class="tab active" role="tab" aria-selected="true" aria-controls="board-panel" data-tab="board">棋盘</button>
+      <button id="settings-tab" class="tab" role="tab" aria-selected="false" aria-controls="settings-panel" data-tab="settings">设置</button>
+    </nav>
+    <span class="local-badge">本地对弈</span>
+  </header>
+
+  <main>
+    <section id="board-panel" class="panel board-panel" role="tabpanel" aria-labelledby="board-tab">
+      <div class="game-info">
+        <div>
+          <p class="eyebrow">双人对弈</p>
+          <h1 id="game-status" aria-live="polite">正在载入棋局…</h1>
+        </div>
+        <button id="new-game" class="secondary-button">新开一局</button>
+      </div>
+      <div class="game-layout">
+        <div class="board-frame">
+          <div id="chessboard" class="chessboard" aria-label="中国象棋棋盘"></div>
+        </div>
+        <aside class="move-panel">
+          <div class="move-heading"><h2>着法记录</h2><span id="move-count">0 手</span></div>
+          <ol id="move-history" class="move-history"></ol>
+          <p id="empty-history" class="empty-history">落子之后，着法会记录在这里。</p>
+        </aside>
+      </div>
+    </section>
+
+    <section id="settings-panel" class="panel settings-panel" role="tabpanel" aria-labelledby="settings-tab" hidden>
+      <div class="settings-heading">
+        <div><p class="eyebrow">统一配置</p><h1>项目设置</h1><p>集中管理棋盘、AI、视觉、机械臂和系统参数。</p></div>
+        <button id="save-settings" class="primary-button" form="settings-form">保存设置</button>
+      </div>
+      <form id="settings-form"></form>
+      <p class="settings-note">AI、视觉与机械臂开关目前仅保存配置，对应能力将在后续版本接入。系统地址和端口在重启服务后生效。</p>
+    </section>
+  </main>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,191 @@
+import { ApiClient } from './api_client.js';
+import { initialUiState, mergeConfig, sectionTitles, selectSquare, settingsSchema, statusText } from './ui_state.js';
+
+const api = new ApiClient();
+const board = document.querySelector('#chessboard');
+const status = document.querySelector('#game-status');
+const history = document.querySelector('#move-history');
+const emptyHistory = document.querySelector('#empty-history');
+const moveCount = document.querySelector('#move-count');
+const toast = document.querySelector('#toast');
+let game;
+let config;
+let ui = initialUiState();
+let busy = false;
+let toastTimer;
+
+function showToast(message) {
+  clearTimeout(toastTimer);
+  toast.textContent = message;
+  toast.hidden = false;
+  toastTimer = setTimeout(() => { toast.hidden = true; }, 2600);
+}
+
+function boardLines() {
+  const verticals = Array.from({ length: 9 }, (_, col) => {
+    const x = col * 100;
+    return col === 0 || col === 8
+      ? `<line x1="${x}" y1="0" x2="${x}" y2="900"/>`
+      : `<line x1="${x}" y1="0" x2="${x}" y2="400"/><line x1="${x}" y1="500" x2="${x}" y2="900"/>`;
+  }).join('');
+  const horizontals = Array.from({ length: 10 }, (_, row) => `<line x1="0" y1="${row * 100}" x2="800" y2="${row * 100}"/>`).join('');
+  return `<svg class="board-lines" viewBox="-4 -4 808 908" aria-hidden="true">${verticals}${horizontals}
+    <path d="M300 0L500 200M500 0L300 200M300 700L500 900M500 700L300 900"/>
+    <text class="river-text" x="115" y="465">楚 河</text><text class="river-text" x="510" y="465">漢 界</text></svg>`;
+}
+
+function renderBoard() {
+  const pieces = new Map(game.pieces.map((piece) => [piece.square, piece]));
+  const targets = config.board.show_legal_moves ? ui.targets : [];
+  board.innerHTML = boardLines();
+  for (let square = 0; square < 90; square += 1) {
+    const row = Math.floor(square / 9);
+    const col = square % 9;
+    const piece = pieces.get(square);
+    const button = document.createElement('button');
+    button.className = 'square';
+    button.style.left = `${col * 12.5}%`;
+    button.style.top = `${row * (100 / 9)}%`;
+    button.dataset.square = String(square);
+    button.setAttribute('aria-label', `${row + 1} 行 ${col + 1} 列${piece ? ` ${piece.name}` : ' 空位'}`);
+    if (ui.selected === square) button.classList.add('selected');
+    if (targets.includes(square)) button.classList.add(piece ? 'legal-capture' : 'legal-empty');
+    if (piece) button.innerHTML = `<span class="piece ${piece.side}">${piece.name}</span>`;
+    if (config.board.show_coordinates) button.innerHTML += `<span class="coordinate">${row},${col}</span>`;
+    button.addEventListener('click', () => onSquare(square));
+    board.append(button);
+  }
+}
+
+function renderGame() {
+  status.textContent = statusText(game);
+  moveCount.textContent = `${game.history.length} 手`;
+  emptyHistory.hidden = game.history.length > 0;
+  history.innerHTML = '';
+  const names = new Map(game.pieces.map((piece) => [piece.square, piece.name]));
+  game.history.forEach((move, index) => {
+    const item = document.createElement('li');
+    const side = index % 2 === 0 ? '红' : '黑';
+    item.innerHTML = `<span>${index + 1}. ${side}</span><strong>${names.get(move.to) || '棋子'} ${move.from} → ${move.to}</strong>`;
+    history.append(item);
+  });
+  history.scrollTop = history.scrollHeight;
+  renderBoard();
+}
+
+async function onSquare(square) {
+  if (busy) return;
+  const piece = game.pieces.find((candidate) => candidate.square === square);
+  const isDestination = ui.selected !== null && ui.targets.includes(square);
+  let targets = [];
+  if (!isDestination && piece?.side === game.turn && ui.selected !== square) {
+    try {
+      targets = (await api.legalMoves(square)).targets;
+    } catch (error) {
+      showToast(error.message);
+      return;
+    }
+  }
+  const result = selectSquare(ui, game, square, targets);
+  ui = { ...ui, selected: result.selected, targets: result.targets };
+  renderBoard();
+  if (result.move) await performMove(result.move.from, result.move.to);
+}
+
+async function performMove(from, to) {
+  busy = true;
+  try {
+    game = await api.move(from, to);
+    renderGame();
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    busy = false;
+  }
+}
+
+function switchTab(tabName) {
+  ui.activeTab = tabName;
+  document.querySelectorAll('[data-tab]').forEach((tab) => {
+    const active = tab.dataset.tab === tabName;
+    tab.classList.toggle('active', active);
+    tab.setAttribute('aria-selected', String(active));
+  });
+  document.querySelector('#board-panel').hidden = tabName !== 'board';
+  document.querySelector('#settings-panel').hidden = tabName !== 'settings';
+}
+
+function renderSettings() {
+  const form = document.querySelector('#settings-form');
+  form.innerHTML = '';
+  for (const [section, fields] of Object.entries(settingsSchema)) {
+    const fieldset = document.createElement('fieldset');
+    fieldset.className = 'settings-section';
+    fieldset.innerHTML = `<h2>${sectionTitles[section]}</h2>`;
+    for (const [key, definition] of Object.entries(fields)) {
+      const value = config[section][key];
+      const wrapper = document.createElement('div');
+      wrapper.className = 'setting';
+      const label = document.createElement('label');
+      label.textContent = definition.label;
+      let input;
+      if (definition.type === 'select') {
+        input = document.createElement('select');
+        for (const [optionValue, text] of definition.options) input.add(new Option(text, optionValue));
+        input.value = value;
+      } else {
+        input = document.createElement('input');
+        input.type = definition.type;
+        if (definition.type === 'checkbox') input.checked = value;
+        else input.value = value;
+      }
+      input.name = `${section}.${key}`;
+      for (const attribute of ['min', 'max', 'step', 'placeholder']) {
+        if (definition[attribute] !== undefined) input.setAttribute(attribute, definition[attribute]);
+      }
+      label.append(input);
+      wrapper.append(label);
+      fieldset.append(wrapper);
+    }
+    form.append(fieldset);
+  }
+}
+
+async function saveSettings(event) {
+  event.preventDefault();
+  const patch = {};
+  for (const [section, fields] of Object.entries(settingsSchema)) {
+    patch[section] = {};
+    for (const [key, definition] of Object.entries(fields)) {
+      const input = document.querySelector(`[name="${section}.${key}"]`);
+      if (definition.type === 'checkbox') patch[section][key] = input.checked;
+      else if (definition.type === 'number') patch[section][key] = Number(input.value);
+      else patch[section][key] = input.value;
+    }
+  }
+  try {
+    config = mergeConfig(config, await api.saveConfig(patch));
+    showToast('设置已保存');
+    renderBoard();
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+document.querySelectorAll('[data-tab]').forEach((tab) => tab.addEventListener('click', () => switchTab(tab.dataset.tab)));
+document.querySelector('#new-game').addEventListener('click', async () => {
+  ui = { ...ui, selected: null, targets: [] };
+  game = await api.reset();
+  renderGame();
+});
+document.querySelector('#settings-form').addEventListener('submit', saveSettings);
+
+try {
+  [game, config] = await Promise.all([api.getGame(), api.getConfig()]);
+  document.documentElement.style.setProperty('--move-duration', `${config.board.animation_duration_ms}ms`);
+  renderGame();
+  renderSettings();
+} catch (error) {
+  status.textContent = '无法连接后端';
+  showToast(error.message);
+}
