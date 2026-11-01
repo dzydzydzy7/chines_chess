@@ -190,5 +190,62 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(position.status(), GameStatus.RED_WON)
 
 
+class RepetitionRuleTests(unittest.TestCase):
+    def test_third_repetition_by_continuous_check_loses(self) -> None:
+        position = with_pieces(
+            Side.RED,
+            (Point(9, 3), KING_RED),
+            (Point(0, 4), KING_BLACK),
+            (Point(1, 0), Piece(Side.RED, PieceType.ROOK)),
+        )
+        cycle = (
+            ((1, 0), (1, 4)), ((0, 4), (0, 5)),
+            ((1, 4), (1, 5)), ((0, 5), (0, 4)),
+            ((1, 5), (1, 4)), ((0, 4), (0, 5)),
+            ((1, 4), (1, 5)), ((0, 5), (0, 4)),
+            ((1, 5), (1, 4)),
+        )
+        for source, target in cycle[:-1]:
+            position = position.apply(Move(Point(*source), Point(*target)))
+        self.assertNotIn(position.status(), (GameStatus.RED_WON, GameStatus.BLACK_WON))
+        position = position.apply(Move(Point(*cycle[-1][0]), Point(*cycle[-1][1])))
+        self.assertEqual(position.status(), GameStatus.BLACK_WON)
+
+    def test_third_repetition_by_continuous_chase_loses(self) -> None:
+        position = with_pieces(
+            Side.RED,
+            (Point(9, 3), KING_RED),
+            (Point(0, 4), KING_BLACK),
+            (Point(5, 0), Piece(Side.RED, PieceType.ROOK)),
+            (Point(5, 8), Piece(Side.BLACK, PieceType.ROOK)),
+        )
+        cycle = (
+            ((5, 0), (5, 7)), ((5, 8), (4, 8)),
+            ((5, 7), (4, 7)), ((4, 8), (5, 8)),
+            ((4, 7), (5, 7)), ((5, 8), (4, 8)),
+            ((5, 7), (4, 7)), ((4, 8), (5, 8)),
+            ((4, 7), (5, 7)),
+        )
+        for source, target in cycle:
+            position = position.apply(Move(Point(*source), Point(*target)))
+        self.assertEqual(position.status(), GameStatus.BLACK_WON)
+
+    def test_ordinary_repetition_without_check_or_chase_is_not_decided(self) -> None:
+        position = with_pieces(
+            Side.RED,
+            (Point(9, 3), KING_RED),
+            (Point(0, 4), KING_BLACK),
+            (Point(9, 0), Piece(Side.RED, PieceType.ROOK)),
+            (Point(0, 0), Piece(Side.BLACK, PieceType.ROOK)),
+        )
+        for _ in range(2):
+            for source, target in (
+                ((9, 0), (8, 0)), ((0, 0), (1, 0)),
+                ((8, 0), (9, 0)), ((1, 0), (0, 0)),
+            ):
+                position = position.apply(Move(Point(*source), Point(*target)))
+        self.assertEqual(position.status(), GameStatus.PLAYING)
+
+
 if __name__ == "__main__":
     unittest.main()

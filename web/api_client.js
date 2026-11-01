@@ -19,6 +19,26 @@ export class ApiClient {
     return this.request('/api/game/reset', 'POST', {});
   }
 
+  undo() {
+    return this.request('/api/game/undo', 'POST', {});
+  }
+
+  saveGame() {
+    return this.request('/api/game/save', 'POST', {});
+  }
+
+  listGames() {
+    return this.request('/api/games');
+  }
+
+  restoreGame(id) {
+    return this.request(`/api/games/${id}/restore`, 'POST', {});
+  }
+
+  replayGame(id, ply) {
+    return this.request(`/api/games/${id}/replay?ply=${ply}`);
+  }
+
   getConfig() {
     return this.request('/api/config');
   }

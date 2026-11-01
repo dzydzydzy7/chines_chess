@@ -165,9 +165,50 @@ class Position:
             return GameStatus.BLACK_WON
         if black_king is None:
             return GameStatus.RED_WON
+        repetition_winner = self._repetition_winner()
+        if repetition_winner is not None:
+            return GameStatus.RED_WON if repetition_winner is Side.RED else GameStatus.BLACK_WON
         if not self.legal_moves_without_status_check():
             return GameStatus.BLACK_WON if self.turn is Side.RED else GameStatus.RED_WON
         return GameStatus.CHECK if self.in_check(self.turn) else GameStatus.PLAYING
+
+    def _repetition_winner(self) -> Optional[Side]:
+        if len(self.history) < 5:
+            return None
+        position = self
+        key = (self.board, self.turn)
+        repetitions: List[Position] = []
+        for move in reversed(self.history):
+            if (position.board, position.turn) == key:
+                repetitions.append(position)
+            board = list(position.board)
+            board[move.source.index] = board[move.target.index]
+            board[move.target.index] = None
+            position = Position(tuple(board), position.turn.opponent, position.history[:-1])
+        if len(repetitions) < 3:
+            return None
+        offender = self.turn.opponent
+        if all(self._checks_or_chases(position, offender) for position in repetitions[-3:]):
+            return offender.opponent
+        return None
+
+    @staticmethod
+    def _checks_or_chases(position: Position, offender: Side) -> bool:
+        if position.in_check(offender.opponent):
+            return True
+        move = position.history[-1]
+        moved_piece = position.piece_at(move.target)
+        if moved_piece is None or moved_piece.side is not offender:
+            return False
+        return any(
+            target_piece is not None
+            and target_piece.side is offender.opponent
+            and target_piece.kind is not PieceType.KING
+            for target_piece in (
+                position.piece_at(target)
+                for target in position.pseudo_legal_targets(move.target)
+            )
+        )
 
     def legal_moves_without_status_check(self) -> Tuple[Move, ...]:
         moves: List[Move] = []

@@ -15,6 +15,27 @@ test('API client sends moves as JSON and returns game state', async () => {
   assert.deepEqual(JSON.parse(calls[0].options.body), { from: 54, to: 45 });
 });
 
+test('API client exposes undo save history restore and replay operations', async () => {
+  const calls = [];
+  const fetch = async (url, options) => {
+    calls.push({ url, options });
+    return { ok: true, json: async () => ({}) };
+  };
+  const client = new ApiClient(fetch);
+  await client.undo();
+  await client.saveGame();
+  await client.listGames();
+  await client.restoreGame('abc123');
+  await client.replayGame('abc123', 4);
+  assert.deepEqual(calls.map((call) => [call.options.method || 'GET', call.url]), [
+    ['POST', '/api/game/undo'],
+    ['POST', '/api/game/save'],
+    ['GET', '/api/games'],
+    ['POST', '/api/games/abc123/restore'],
+    ['GET', '/api/games/abc123/replay?ply=4'],
+  ]);
+});
+
 test('API client exposes server validation errors', async () => {
   const fetch = async () => ({ ok: false, status: 422, json: async () => ({ error: 'illegal move' }) });
   const client = new ApiClient(fetch);

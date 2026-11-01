@@ -7,14 +7,16 @@ from urllib.parse import parse_qs, urlparse
 
 from .config import ConfigValidationError
 from .config_store import ConfigStore
+from .game_store import GameStore
 from .service import GameService, ServiceError
 
 Response = Tuple[int, Dict[str, Any]]
 
 
 class Application:
-    def __init__(self, config_store: Optional[ConfigStore] = None) -> None:
-        self.game = GameService()
+    def __init__(self, config_store: Optional[ConfigStore] = None, game_store: Optional[GameStore] = None) -> None:
+        store = GameStore(Path("data/games")) if game_store is None else game_store
+        self.game = GameService(store)
         self.config = config_store or ConfigStore(Path("data/settings.json"))
         self._lock = RLock()
 
@@ -44,6 +46,23 @@ class Application:
             return 200, self.game.move(source, target)
         if method == "POST" and path == "/api/game/reset":
             return 200, self.game.reset()
+        if method == "POST" and path == "/api/game/undo":
+            return 200, self.game.undo()
+        if method == "POST" and path == "/api/game/save":
+            return 200, self.game.save()
+        if method == "GET" and path == "/api/games":
+            return 200, {"games": self.game.list_games()}
+        parts = path.strip("/").split("/")
+        if len(parts) == 4 and parts[:2] == ["api", "games"]:
+            game_id, action = parts[2:]
+            if method == "POST" and action == "restore":
+                return 200, self.game.restore(game_id)
+            if method == "GET" and action == "replay":
+                try:
+                    ply = int(query.get("ply", ["0"])[0])
+                except (ValueError, TypeError) as error:
+                    raise ServiceError("ply must be an integer") from error
+                return 200, self.game.replay(game_id, ply)
         if method == "GET" and path == "/api/game/legal-moves":
             try:
                 source = int(query["from"][0])

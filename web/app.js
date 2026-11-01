@@ -9,6 +9,8 @@ const emptyHistory = document.querySelector('#empty-history');
 const moveCount = document.querySelector('#move-count');
 const toast = document.querySelector('#toast');
 let game;
+let liveGame;
+let replay = null;
 let config;
 let ui = initialUiState();
 let busy = false;
@@ -58,7 +60,7 @@ function renderBoard() {
 }
 
 function renderGame() {
-  status.textContent = statusText(game);
+  status.textContent = replay ? `回放：第 ${replay.ply} 手` : statusText(game);
   moveCount.textContent = `${game.history.length} 手`;
   emptyHistory.hidden = game.history.length > 0;
   history.innerHTML = '';
@@ -70,11 +72,20 @@ function renderGame() {
     history.append(item);
   });
   history.scrollTop = history.scrollHeight;
+  document.querySelector('#replay-controls').hidden = !replay;
+  document.querySelector('#undo-game').disabled = Boolean(replay) || !game.history.length;
+  document.querySelector('#save-game').disabled = Boolean(replay);
+  document.querySelector('#new-game').disabled = Boolean(replay);
+  if (replay) {
+    document.querySelector('#replay-progress').textContent = `${replay.ply} / ${replay.length}`;
+    document.querySelector('#replay-previous').disabled = replay.ply === 0;
+    document.querySelector('#replay-next').disabled = replay.ply === replay.length;
+  }
   renderBoard();
 }
 
 async function onSquare(square) {
-  if (busy) return;
+  if (busy || replay) return;
   const piece = game.pieces.find((candidate) => candidate.square === square);
   const isDestination = ui.selected !== null && ui.targets.includes(square);
   let targets = [];
@@ -96,6 +107,7 @@ async function performMove(from, to) {
   busy = true;
   try {
     game = await api.move(from, to);
+    liveGame = game;
     renderGame();
   } catch (error) {
     showToast(error.message);
@@ -112,7 +124,68 @@ function switchTab(tabName) {
     tab.setAttribute('aria-selected', String(active));
   });
   document.querySelector('#board-panel').hidden = tabName !== 'board';
+  document.querySelector('#history-panel').hidden = tabName !== 'history';
   document.querySelector('#settings-panel').hidden = tabName !== 'settings';
+  if (tabName === 'history') loadGameHistory();
+}
+
+async function loadGameHistory() {
+  const container = document.querySelector('#game-list');
+  try {
+    const games = (await api.listGames()).games;
+    document.querySelector('#empty-games').hidden = games.length > 0;
+    container.innerHTML = '';
+    for (const saved of games) {
+      const item = document.createElement('article');
+      item.className = 'saved-game';
+      const information = document.createElement('div');
+      const id = document.createElement('strong');
+      id.textContent = saved.id;
+      const time = document.createElement('span');
+      time.textContent = `${new Date(saved.created_at).toLocaleString()} · ${saved.move_count} 手`;
+      information.append(id, time);
+      const actions = document.createElement('div');
+      const restore = document.createElement('button');
+      restore.className = 'secondary-button';
+      restore.textContent = '恢复';
+      restore.addEventListener('click', () => restoreGame(saved.id));
+      const replayButton = document.createElement('button');
+      replayButton.className = 'secondary-button';
+      replayButton.textContent = '回放';
+      replayButton.addEventListener('click', () => startReplay(saved.id));
+      actions.append(restore, replayButton);
+      item.append(information, actions);
+      container.append(item);
+    }
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function restoreGame(id) {
+  try {
+    replay = null;
+    game = await api.restoreGame(id);
+    liveGame = game;
+    ui = { ...ui, selected: null, targets: [] };
+    switchTab('board');
+    renderGame();
+    showToast('对局已恢复');
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function startReplay(id, ply = 0) {
+  try {
+    game = await api.replayGame(id, ply);
+    replay = { id, ply, length: game.replay_length };
+    ui = { ...ui, selected: null, targets: [] };
+    switchTab('board');
+    renderGame();
+  } catch (error) {
+    showToast(error.message);
+  }
 }
 
 function renderSettings() {
@@ -174,14 +247,55 @@ async function saveSettings(event) {
 
 document.querySelectorAll('[data-tab]').forEach((tab) => tab.addEventListener('click', () => switchTab(tab.dataset.tab)));
 document.querySelector('#new-game').addEventListener('click', async () => {
-  ui = { ...ui, selected: null, targets: [] };
-  game = await api.reset();
+  try {
+    ui = { ...ui, selected: null, targets: [] };
+    game = await api.reset();
+    liveGame = game;
+    renderGame();
+  } catch (error) {
+    showToast(error.message);
+  }
+});
+document.querySelector('#undo-game').addEventListener('click', async () => {
+  if (busy || replay) return;
+  busy = true;
+  try {
+    game = await api.undo();
+    liveGame = game;
+    ui = { ...ui, selected: null, targets: [] };
+    renderGame();
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    busy = false;
+  }
+});
+document.querySelector('#save-game').addEventListener('click', async () => {
+  try {
+    game = await api.saveGame();
+    liveGame = game;
+    renderGame();
+    showToast(`对局已保存：${game.id}`);
+  } catch (error) {
+    showToast(error.message);
+  }
+});
+document.querySelector('#replay-previous').addEventListener('click', () => {
+  if (replay) startReplay(replay.id, replay.ply - 1);
+});
+document.querySelector('#replay-next').addEventListener('click', () => {
+  if (replay) startReplay(replay.id, replay.ply + 1);
+});
+document.querySelector('#replay-exit').addEventListener('click', () => {
+  replay = null;
+  game = liveGame;
   renderGame();
 });
 document.querySelector('#settings-form').addEventListener('submit', saveSettings);
 
 try {
   [game, config] = await Promise.all([api.getGame(), api.getConfig()]);
+  liveGame = game;
   document.documentElement.style.setProperty('--move-duration', `${config.board.animation_duration_ms}ms`);
   renderGame();
   renderSettings();
