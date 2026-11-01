@@ -57,6 +57,24 @@ class WebServerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertFalse(body["board"]["show_legal_moves"])
 
+    def test_real_http_pve_ai_move_round_trip(self) -> None:
+        status, body = self.request(
+            "POST",
+            "/api/game/pve",
+            {"player_side": "black", "difficulty": "easy", "time_limit_ms": 100},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(body["mode"], "pve")
+        for _ in range(100):
+            status, current = self.request("GET", "/api/game")
+            if not current["ai_thinking"]:
+                break
+        self.assertEqual(status, 200)
+        self.assertFalse(current["ai_thinking"])
+        self.assertEqual(len(current["history"]), 1)
+        self.assertEqual(current["turn"], "black")
+        self.assertEqual(current["history"][0]["ai"]["difficulty"], "easy")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -25,7 +25,7 @@
     <section id="board-panel" class="panel board-panel" role="tabpanel" aria-labelledby="board-tab">
       <div class="game-info">
         <div>
-          <p class="eyebrow">双人对弈</p>
+          <p id="game-mode" class="eyebrow">双人对弈</p>
           <h1 id="game-status" aria-live="polite">正在载入棋局…</h1>
         </div>
         <div class="game-actions">
@@ -64,7 +64,7 @@
         <button id="save-settings" class="primary-button" form="settings-form">保存设置</button>
       </div>
       <form id="settings-form"></form>
-      <p class="settings-note">AI、视觉与机械臂开关目前仅保存配置，对应能力将在后续版本接入。系统地址和端口在重启服务后生效。</p>
+      <p class="settings-note">AI 设置保存后立即生效并新开一局；视觉与机械臂开关目前仅保存配置。系统地址和端口在重启服务后生效。</p>
     </section>
   </main>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>

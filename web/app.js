@@ -1,5 +1,5 @@
 import { ApiClient } from './api_client.js';
-import { initialUiState, mergeConfig, sectionTitles, selectSquare, settingsSchema, statusText } from './ui_state.js';
+import { canHumanMove, formatMove, initialUiState, mergeConfig, sectionTitles, selectSquare, settingsSchema, statusText } from './ui_state.js';
 
 const api = new ApiClient();
 const board = document.querySelector('#chessboard');
@@ -15,6 +15,7 @@ let config;
 let ui = initialUiState();
 let busy = false;
 let toastTimer;
+let pollTimer;
 
 function showToast(message) {
   clearTimeout(toastTimer);
@@ -61,14 +62,17 @@ function renderBoard() {
 
 function renderGame() {
   status.textContent = replay ? `回放：第 ${replay.ply} 手` : statusText(game);
+  document.querySelector('#game-mode').textContent = game.mode === 'pve'
+    ? `人机对弈 · 玩家${game.player_side === 'red' ? '红方' : '黑方'}`
+    : '双人对弈';
   moveCount.textContent = `${game.history.length} 手`;
   emptyHistory.hidden = game.history.length > 0;
   history.innerHTML = '';
-  const names = new Map(game.pieces.map((piece) => [piece.square, piece.name]));
   game.history.forEach((move, index) => {
     const item = document.createElement('li');
     const side = index % 2 === 0 ? '红' : '黑';
-    item.innerHTML = `<span>${index + 1}. ${side}</span><strong>${names.get(move.to) || '棋子'} ${move.from} → ${move.to}</strong>`;
+    item.innerHTML = `<span>${index + 1}. ${side}</span><strong>${formatMove(move)}</strong>`;
+    if (move.ai) item.title = `AI ${move.ai.version} · 深度 ${move.ai.completed_depth} · ${Math.round(move.ai.elapsed_ms)} ms`;
     history.append(item);
   });
   history.scrollTop = history.scrollHeight;
@@ -82,10 +86,30 @@ function renderGame() {
     document.querySelector('#replay-next').disabled = replay.ply === replay.length;
   }
   renderBoard();
+  scheduleAiPolling();
+}
+
+function scheduleAiPolling() {
+  clearTimeout(pollTimer);
+  if (!game?.ai_thinking || replay) return;
+  const gameId = game.id;
+  const historyLength = game.history.length;
+  pollTimer = setTimeout(async () => {
+    try {
+      const latest = await api.getGame();
+      if (replay || game.id !== gameId || game.history.length !== historyLength) return;
+      game = latest;
+      liveGame = latest;
+      renderGame();
+    } catch (error) {
+      showToast(error.message);
+      pollTimer = setTimeout(scheduleAiPolling, 500);
+    }
+  }, 100);
 }
 
 async function onSquare(square) {
-  if (busy || replay) return;
+  if (busy || replay || !canHumanMove(game)) return;
   const piece = game.pieces.find((candidate) => candidate.square === square);
   const isDestination = ui.selected !== null && ui.targets.includes(square);
   let targets = [];
@@ -237,9 +261,20 @@ async function saveSettings(event) {
     }
   }
   try {
+    const aiChanged = JSON.stringify(config.ai) !== JSON.stringify(patch.ai);
     config = mergeConfig(config, await api.saveConfig(patch));
-    showToast('设置已保存');
-    renderBoard();
+    if (aiChanged) {
+      game = await api.getGame();
+      liveGame = game;
+      replay = null;
+      ui = { ...ui, selected: null, targets: [] };
+      switchTab('board');
+      renderGame();
+      showToast('设置已保存，对局已按新 AI 配置开始');
+    } else {
+      showToast('设置已保存');
+      renderBoard();
+    }
   } catch (error) {
     showToast(error.message);
   }
@@ -249,7 +284,9 @@ document.querySelectorAll('[data-tab]').forEach((tab) => tab.addEventListener('c
 document.querySelector('#new-game').addEventListener('click', async () => {
   try {
     ui = { ...ui, selected: null, targets: [] };
-    game = await api.reset();
+    game = config.ai.enabled
+      ? await api.startPve(config.ai.player_side, config.ai.difficulty, config.ai.time_limit_ms)
+      : await api.reset();
     liveGame = game;
     renderGame();
   } catch (error) {

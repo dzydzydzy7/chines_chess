@@ -15,6 +15,14 @@ export class ApiClient {
     return this.request('/api/game/move', 'POST', { from, to });
   }
 
+  startPve(playerSide, difficulty, timeLimitMs) {
+    return this.request('/api/game/pve', 'POST', {
+      player_side: playerSide,
+      difficulty,
+      time_limit_ms: timeLimitMs,
+    });
+  }
+
   reset() {
     return this.request('/api/game/reset', 'POST', {});
   }

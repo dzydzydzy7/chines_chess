@@ -5,7 +5,8 @@ export const settingsSchema = {
     animation_duration_ms: { label: '走子动画（毫秒）', type: 'number', min: 0, max: 2000 },
   },
   ai: {
-    enabled: { label: '启用 AI（后续版本）', type: 'checkbox' },
+    enabled: { label: '启用人机对弈', type: 'checkbox' },
+    player_side: { label: '玩家阵营', type: 'select', options: [['red', '红方'], ['black', '黑方']] },
     difficulty: { label: 'AI 难度', type: 'select', options: [['easy', '简单'], ['medium', '中等'], ['hard', '困难']] },
     time_limit_ms: { label: 'AI 思考时限（毫秒）', type: 'number', min: 100, max: 60000 },
   },
@@ -39,7 +40,12 @@ export function initialUiState() {
   return { selected: null, targets: [], activeTab: 'board' };
 }
 
+export function canHumanMove(game) {
+  return game.mode !== 'pve' || (!game.ai_thinking && game.turn === game.player_side);
+}
+
 export function selectSquare(state, game, square, targets) {
+  if (!canHumanMove(game)) return { selected: null, targets: [], move: null };
   const piece = game.pieces.find((candidate) => candidate.square === square);
   if (state.selected !== null && state.targets.includes(square)) {
     return { selected: null, targets: [], move: { from: state.selected, to: square } };
@@ -55,10 +61,21 @@ export function selectSquare(state, game, square, targets) {
 
 export function statusText(game) {
   const side = game.turn === 'red' ? '红方' : '黑方';
+  const difficulties = { easy: '简单', medium: '中等', hard: '困难' };
+  if (game.ai_thinking) return `AI 思考中（${difficulties[game.difficulty]}）…`;
+  if (game.ai_error) return `AI 已暂停：${game.ai_error}`;
   if (game.status === 'check') return `${side}被将军，应将`;
   if (game.status === 'red_won') return '红方获胜';
   if (game.status === 'black_won') return '黑方获胜';
   return `${side}行棋`;
+}
+
+export function formatSquare(square) {
+  return `(${Math.floor(square / 9)}, ${square % 9})`;
+}
+
+export function formatMove(move) {
+  return `${move.piece} ${formatSquare(move.from)} → ${formatSquare(move.to)}`;
 }
 
 export function mergeConfig(original, patch) {

@@ -2,7 +2,23 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from functools import wraps
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple, TypeVar
+
+
+T = TypeVar("T")
+
+
+def cached(method: Callable[..., T]) -> Callable[..., T]:
+    cache_key = "_cached_" + method.__name__
+
+    @wraps(method)
+    def wrapper(self):  # type: ignore[no-untyped-def]
+        if cache_key not in self.__dict__:
+            object.__setattr__(self, cache_key, method(self))
+        return self.__dict__[cache_key]
+
+    return wrapper
 
 
 class Side(str, Enum):
@@ -129,20 +145,11 @@ class Position:
         }
         return generators[piece.kind](source, piece)
 
+    @cached
     def legal_moves(self) -> Tuple[Move, ...]:
         if self.status() in (GameStatus.RED_WON, GameStatus.BLACK_WON):
             return ()
-        moves: List[Move] = []
-        for index, piece in enumerate(self.board):
-            if piece is None or piece.side is not self.turn:
-                continue
-            source = Point.from_index(index)
-            for target in self.pseudo_legal_targets(source):
-                move = Move(source, target)
-                candidate = self._move_unchecked(move)
-                if not candidate.in_check(self.turn):
-                    moves.append(move)
-        return tuple(moves)
+        return self.legal_moves_without_status_check()
 
     def legal_targets(self, source: Point) -> Tuple[Point, ...]:
         return tuple(move.target for move in self.legal_moves() if move.source == source)
@@ -158,6 +165,7 @@ class Position:
         board[move.source.index] = None
         return Position(tuple(board), self.turn.opponent, self.history + (move,))
 
+    @cached
     def status(self) -> GameStatus:
         red_king = self._find_king(Side.RED)
         black_king = self._find_king(Side.BLACK)
@@ -168,7 +176,7 @@ class Position:
         repetition_winner = self._repetition_winner()
         if repetition_winner is not None:
             return GameStatus.RED_WON if repetition_winner is Side.RED else GameStatus.BLACK_WON
-        if not self.legal_moves_without_status_check():
+        if not self.has_legal_move():
             return GameStatus.BLACK_WON if self.turn is Side.RED else GameStatus.RED_WON
         return GameStatus.CHECK if self.in_check(self.turn) else GameStatus.PLAYING
 
@@ -210,6 +218,17 @@ class Position:
             )
         )
 
+    def has_legal_move(self) -> bool:
+        for index, piece in enumerate(self.board):
+            if piece is None or piece.side is not self.turn:
+                continue
+            source = Point.from_index(index)
+            for target in self.pseudo_legal_targets(source):
+                if not self._move_unchecked(Move(source, target)).in_check(self.turn):
+                    return True
+        return False
+
+    @cached
     def legal_moves_without_status_check(self) -> Tuple[Move, ...]:
         moves: List[Move] = []
         for index, piece in enumerate(self.board):

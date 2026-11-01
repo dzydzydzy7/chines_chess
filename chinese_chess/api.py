@@ -16,9 +16,12 @@ Response = Tuple[int, Dict[str, Any]]
 class Application:
     def __init__(self, config_store: Optional[ConfigStore] = None, game_store: Optional[GameStore] = None) -> None:
         store = GameStore(Path("data/games")) if game_store is None else game_store
-        self.game = GameService(store)
         self.config = config_store or ConfigStore(Path("data/settings.json"))
+        self.game = GameService(store)
         self._lock = RLock()
+        config = self.config.get()
+        if config.ai_enabled:
+            self.game.start_pve(config.ai_player_side, config.ai_difficulty, config.ai_time_limit_ms)
 
     def handle(self, method: str, raw_path: str, payload: Optional[Mapping[str, Any]]) -> Response:
         parsed = urlparse(raw_path)
@@ -44,7 +47,22 @@ class Application:
             if type(source) is not int or type(target) is not int:
                 raise ServiceError("move squares must be integers")
             return 200, self.game.move(source, target)
+        if method == "POST" and path == "/api/game/pve":
+            data = self._payload(payload)
+            config = self.config.get()
+            return 200, self.game.start_pve(
+                data.get("player_side", config.ai_player_side),
+                data.get("difficulty", config.ai_difficulty),
+                data.get("time_limit_ms", config.ai_time_limit_ms),
+            )
         if method == "POST" and path == "/api/game/reset":
+            config = self.config.get()
+            if config.ai_enabled:
+                return 200, self.game.start_pve(
+                    config.ai_player_side,
+                    config.ai_difficulty,
+                    config.ai_time_limit_ms,
+                )
             return 200, self.game.reset()
         if method == "POST" and path == "/api/game/undo":
             return 200, self.game.undo()
@@ -72,7 +90,30 @@ class Application:
         if method == "GET" and path == "/api/config":
             return 200, self.config.get().to_dict()
         if method == "PUT" and path == "/api/config":
-            return 200, self.config.update(self._payload(payload)).to_dict()
+            previous = self.config.get()
+            updated = self.config.update(self._payload(payload))
+            previous_ai = (
+                previous.ai_enabled,
+                previous.ai_player_side,
+                previous.ai_difficulty,
+                previous.ai_time_limit_ms,
+            )
+            updated_ai = (
+                updated.ai_enabled,
+                updated.ai_player_side,
+                updated.ai_difficulty,
+                updated.ai_time_limit_ms,
+            )
+            if previous_ai != updated_ai:
+                if updated.ai_enabled:
+                    self.game.start_pve(
+                        updated.ai_player_side,
+                        updated.ai_difficulty,
+                        updated.ai_time_limit_ms,
+                    )
+                else:
+                    self.game.reset()
+            return 200, updated.to_dict()
         return 404, {"error": "API route not found"}
 
     @staticmethod

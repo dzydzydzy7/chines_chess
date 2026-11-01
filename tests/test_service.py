@@ -18,7 +18,7 @@ class GameServiceTests(unittest.TestCase):
         state = self.service.move(54, 45)
         self.assertEqual(state["turn"], "black")
         self.assertEqual(len(state["history"]), 1)
-        self.assertEqual(state["history"][0], {"from": 54, "to": 45, "captured": None})
+        self.assertEqual(state["history"][0], {"from": 54, "to": 45, "piece": "兵", "captured": None})
 
     def test_capture_is_recorded_in_history(self) -> None:
         self.service.move(54, 45)

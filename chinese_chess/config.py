@@ -14,6 +14,7 @@ class Config:
     show_coordinates: bool = True
     animation_duration_ms: int = 160
     ai_enabled: bool = False
+    ai_player_side: str = "red"
     ai_difficulty: str = "medium"
     ai_time_limit_ms: int = 1000
     vision_enabled: bool = False
@@ -54,6 +55,7 @@ class Config:
             },
             "ai": {
                 "enabled": self.ai_enabled,
+                "player_side": self.ai_player_side,
                 "difficulty": self.ai_difficulty,
                 "time_limit_ms": self.ai_time_limit_ms,
             },
@@ -79,7 +81,7 @@ class Config:
     def _schema() -> Dict[str, Dict[str, type]]:
         return {
             "board": {"show_legal_moves": bool, "show_coordinates": bool, "animation_duration_ms": int},
-            "ai": {"enabled": bool, "difficulty": str, "time_limit_ms": int},
+            "ai": {"enabled": bool, "player_side": str, "difficulty": str, "time_limit_ms": int},
             "vision": {"enabled": bool, "camera_device": str, "confidence": float},
             "robot": {"enabled": bool, "port": str, "speed_percent": int, "dry_run": bool},
             "system": {"host": str, "port": int, "log_level": str},
@@ -101,6 +103,7 @@ class Config:
         if range_key in ranges and not ranges[range_key][0] <= value <= ranges[range_key][1]:
             raise ConfigValidationError("value out of range for %s.%s" % (section, key))
         choices = {
+            "player_side": ("red", "black"),
             "difficulty": ("easy", "medium", "hard"),
             "log_level": ("DEBUG", "INFO", "WARNING", "ERROR"),
         }
@@ -114,6 +117,7 @@ class Config:
             show_coordinates=values["board"]["show_coordinates"],
             animation_duration_ms=values["board"]["animation_duration_ms"],
             ai_enabled=values["ai"]["enabled"],
+            ai_player_side=values["ai"]["player_side"],
             ai_difficulty=values["ai"]["difficulty"],
             ai_time_limit_ms=values["ai"]["time_limit_ms"],
             vision_enabled=values["vision"]["enabled"],
